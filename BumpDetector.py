@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 from difflib import SequenceMatcher
 
@@ -67,11 +68,16 @@ def detect_bumps(old_signatures, new_signatures):
                 enums_taken[enum_name] = signature
             else:
                 enum_name = f'Unknown{signature["Id"]}'
+                enums_taken[enum_name] = signature
         else:
             enums_taken[enum_name] = signature
         print(f'{enum_name}={signature["Id"]}')
 
-    return new_signatures
+    for enum_name, signature in enums_taken:
+        signature.pop("Matches", None)
+        signature["Name"] = enum_name
+
+    return enums_taken
 
 
 if __name__ == "__main__":
@@ -87,5 +93,10 @@ if __name__ == "__main__":
 
     matches = detect_bumps(old_signatures, new_signatures)
 
-    with open(output_file_path, 'w') as output_fh:
+    with open(os.path.combine(output_file_path, "event_codes.enum"), 'w') as enum_fh:
+        for enum_name, signature in matches:
+            enum_id = signature["Id"]
+            enum_fh.write(f"{enum_name}={enum_id},\r\n")
+
+    with open(os.path.combine(output_file_path, "signatures.json"), 'w') as output_fh:
         json.dump(matches, output_fh, indent=4)

@@ -9,7 +9,6 @@ def detect_bumps(old_signatures, new_signatures):
 
     for old_index in range(0, len(old_signatures)):
         old_signature = old_signatures[old_index]
-
         old_sig_str = json.dumps(old_signature["Signature"])
 
         # Start off at the old index since things will most likely be ahead
@@ -34,30 +33,40 @@ def detect_bumps(old_signatures, new_signatures):
             signature["Matches"].sort(key=lambda match: (match["Likeness"], match["Signature"]["Id"]), reverse=True)
 
             old_signature = None
+            initial_bump = bump
             for old_sig in signature["Matches"]:
+                bump = initial_bump
                 if old_sig["Signature"]["Id"] + bump > new_id:
                     continue
                 else:
                     old_signature = old_sig
-                    break
-
-            if old_signature:
-                likeness = old_signature["Likeness"]
-                old_signature = old_signature["Signature"]
-                old_id = old_signature["Id"]
-                if likeness < 1.0:
-                    # Get difference, if too far throw it away
-                    if new_id - (old_id + bump) < 3:
-                        bump += new_id - old_id - bump
-                        enum_name = old_signature["Name"]
-                else:
-                    if bump > 0:
-                        if old_id + bump <= new_id:
+                    likeness = old_signature["Likeness"]
+                    old_signature = old_signature["Signature"]
+                    old_id = old_signature["Id"]
+                    if likeness < 1.0:
+                        # Get difference, if too far throw it away
+                        if new_id - (old_id + bump) < 3:
                             bump += new_id - old_id - bump
                             enum_name = old_signature["Name"]
                     else:
-                        bump += new_id - old_id - bump
-                        enum_name = old_signature["Name"]
+                        if bump > 0:
+                            if old_id + bump <= new_id:
+                                bump += new_id - old_id - bump
+                                enum_name = old_signature["Name"]
+                        else:
+                            bump += new_id - old_id - bump
+                            enum_name = old_signature["Name"]
+
+                    # Check if this signature is already taken
+                    if enum_name in enums_taken:
+                        # Is this signature closer to the previous one?
+                        prev_sig_id = enums_taken[enum_name]["Id"]
+                        cur_sig_id = signature["Id"]
+                        old_id = signature["Matches"][0]["Signature"]["Id"]
+                        if abs(cur_sig_id - old_id) < abs(prev_sig_id - old_id):
+                            break
+                    else:
+                        break
 
         if enum_name in enums_taken:
             # Is this signature closer to the previous one?
@@ -73,11 +82,16 @@ def detect_bumps(old_signatures, new_signatures):
             enums_taken[enum_name] = signature
         print(f'{enum_name}={signature["Id"]}')
 
-    for enum_name, signature in enums_taken:
+    res_list = []
+    for enum_name in enums_taken.keys():
+        signature = enums_taken[enum_name]
         signature.pop("Matches", None)
+        if enum_name.startswith("Unknown"):
+            enum_name = f'Unknown{signature["Id"]}'
         signature["Name"] = enum_name
+        res_list.append(signature)
 
-    return enums_taken
+    return res_list
 
 
 if __name__ == "__main__":
@@ -93,10 +107,12 @@ if __name__ == "__main__":
 
     matches = detect_bumps(old_signatures, new_signatures)
 
-    with open(os.path.combine(output_file_path, "event_codes.enum"), 'w') as enum_fh:
-        for enum_name, signature in matches:
-            enum_id = signature["Id"]
-            enum_fh.write(f"{enum_name}={enum_id},\r\n")
+    if not os.path.exists(output_file_path):
+        os.mkdir(output_file_path)
 
-    with open(os.path.combine(output_file_path, "signatures.json"), 'w') as output_fh:
+    with open(os.path.join(output_file_path, "event_codes.enum"), 'w') as enum_fh:
+        for enum in matches:
+            enum_fh.write(f"{enum['Name']}={enum['Id']},\n")
+
+    with open(os.path.join(output_file_path, "signatures.json"), 'w') as output_fh:
         json.dump(matches, output_fh, indent=4)
